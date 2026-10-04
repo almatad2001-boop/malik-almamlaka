@@ -1,0 +1,9 @@
+{
+  "name":"malik-almamlaka-pro",
+  "version":"2.0.0",
+  "private":true,
+  "description":"Malik Al Mamlaka - online multiplayer strategy game",
+  "main":"server.js",
+  "scripts":{"start":"node server.js"},
+  "dependencies":{"express":"^4.21.2","socket.io":"^4.8.1"}
+}
