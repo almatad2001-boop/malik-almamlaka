@@ -93,10 +93,17 @@ function battleLosses(attackerArmy,defenderArmy,attackerWins){
   const dLoss=Math.max(20,Math.floor(d*(0.20+Math.random()*0.16)));
   return {aLoss,dLoss};
 }
-function attack(r,p,targetId){
+function attack(r,p,targetId,sourceId=null){
   const t=r.regions[targetId]; if(!t)return 'الدولة غير موجودة'; if(t.owner===p.id)return 'هذه دولتك بالفعل';
   if(r.pendingBattles.some(b=>b.targetId===t.id))return 'هناك معركة معلقة في هذه الدولة بانتظار قرار المدافع.';
-  let source=r.regions.find(x=>x.owner===p.id&&ADJ[x.id]?.includes(t.id)&&x.army>=50);
+  let source=null;
+  if(sourceId!==null&&sourceId!==undefined){
+    const chosen=r.regions[Number(sourceId)];
+    if(!chosen||chosen.owner!==p.id||!ADJ[chosen.id]?.includes(t.id)||chosen.army<50)return 'اختر دولة تملكها ومجاورة للهدف وبها 50 جيشًا على الأقل.';
+    source=chosen;
+  } else {
+    source=r.regions.find(x=>x.owner===p.id&&ADJ[x.id]?.includes(t.id)&&x.army>=50);
+  }
   let occupiedSource=null;
   if(t.occupation?.attackerId===p.id && (t.occupation.army||0)>=50) occupiedSource={region:t,army:t.occupation.army,sourceId:t.occupation.sourceId,fromOccupation:true};
   if(occupiedSource) source=t;
@@ -106,10 +113,10 @@ function attack(r,p,targetId){
 
   // A zero-defense country with an army gives its owner a strategic choice:
   // withdraw and surrender half the land, or resist in a pure army-vs-army battle.
-  if(t.defense<=0 && t.army>0){
+  if(t.defense<50 && t.army>0){
     const id=++r.battleSeq;
     r.pendingBattles.push({id,attackerId:p.id,defenderId:t.owner,targetId:t.id,sourceId:source.id,createdRound:r.round,fromOccupation:!!occupiedSource});
-    log(r,`⚔️ ${p.name} هاجم ${t.name} بلا دفاع. ينتظر قرار ${r.players.find(x=>x.id===t.owner)?.name||'المدافع'}: انسحاب أو مقاومة.`);
+    log(r,`⚔️ ${p.name} هاجم ${t.name} ودفاعها ${t.defense}. ينتظر قرار ${r.players.find(x=>x.id===t.owner)?.name||'المدافع'}: انسحاب أو مقاومة.`);
     return `⚔️ هجومك على ${t.name} — بانتظار قرار المدافع.`;
   }
 
@@ -193,7 +200,7 @@ function startRevolt(r,p,targetId){const t=r.regions[targetId],m=t?.militia;if(!
 function intelligence(r,p,targetId){const t=r.regions[targetId];if(!t)return 'الدولة غير موجودة.';if(t.owner!==p.id&&!neighborsOwnedBy(r,p.id,targetId))return 'الاستخبارات متاحة لدولتك أو للدول المجاورة فقط.';spendAction(p);const m=t.militia;const count=m&&m.owner!==p.id?m.count:0;const probability=count>=50?90:count>=40?75:count>=30?55:count>=20?35:count>=10?15:5;t.securityInvestigations=t.securityInvestigations||{};t.securityInvestigations[p.id]=true;return `🔍 الاستخبارات: فحص ${t.name}. احتمال وجود ميليشيات معادية هو ${probability}%. ${count?'تم رصد مؤشرات تتوافق مع خلية نائمة.':'لا توجد مؤشرات قوية حاليًا.'} أصبح تدخل أمن الدولة متاحًا.`}
 function securityIntervention(r,p,targetId){const t=r.regions[targetId];if(!t)return 'الدولة غير موجودة.';if(t.owner!==p.id&&!neighborsOwnedBy(r,p.id,targetId))return 'تدخل أمن الدولة متاح لدولتك أو للدول المجاورة فقط.';if(!t.securityInvestigations?.[p.id])return 'استخدم الاستخبارات أولًا.';if(p.gold<100)return 'تحتاج 100 ذهب لتدخل أمن الدولة.';p.gold-=100;spendAction(p);if(t.militia&&t.militia.owner!==p.id){log(r,`🚨 ${p.name} نفّذ تدخل أمن الدولة في ${t.name} وأحبط الخلية.`);t.militia=null;return `🚨 تم تطهير ${t.name} من الميليشيات المعادية.`}return 'لم يتم العثور على ميليشيات معادية.'}
 
-function action(r,p,type,targetId,destinationId,amount,supportType){
+function action(r,p,type,targetId,destinationId,amount,supportType,sourceId){
  if(type==='end'){endTurn(r);return null}
  if(p.actionsLeft<=0)return 'انتهت حركاتك. اضغط إنهاء الدور.';
  if(type==='support'){return support(r,p,supportType,targetId,destinationId,amount)}
@@ -201,17 +208,28 @@ function action(r,p,type,targetId,destinationId,amount,supportType){
  if(type==='revolt')return startRevolt(r,p,targetId);
  if(type==='intelligence')return intelligence(r,p,targetId);
  if(type==='securityIntervention')return securityIntervention(r,p,targetId);
- if(type==='withdraw'){
+ if(type==='withdraw' || type==='withdrawDefense'){
    const source=r.regions[targetId], dest=r.regions[destinationId];
-   if(!source||source.owner!==p.id)return 'اختر دولة تملكها كمصدر للجيش.';
-   if(!dest||dest.owner!==p.id)return 'اختر دولة تملكها لنقل الجيش إليها.';
-   if(source.id===dest.id)return 'اختر دولة مختلفة لنقل الجيش إليها.';
-   if(source.army<=0)return 'هذه الدولة لا تملك جيشًا لنقله.';
-   const moved=source.army; source.army=0; dest.army+=moved; spendAction(p);
-   log(r,`🔄 ${p.name} سحب جيش ${source.name} بالكامل (${moved}) ونقله إلى ${dest.name}.`);
-   return `🔄 تم نقل ${moved} جيش من ${source.name} إلى ${dest.name}. بقيت ${source.name} تحت سيطرتك بدون جيش.`;
+   if(!source||source.owner!==p.id)return `اختر دولة تملكها كمصدر لل${type==='withdraw'?'جيش':'دفاع'}.`;
+   if(!dest||dest.owner!==p.id)return `اختر دولة تملكها لنقل ال${type==='withdraw'?'جيش':'دفاع'} إليها.`;
+   if(source.id===dest.id)return 'اختر دولة مختلفة للنقل.';
+   if(!r.regions.some(x=>x.owner===p.id&&x.id!==source.id))return 'تحتاج إلى دولتين تملكهما على الأقل للنقل.';
+   const n=Math.floor(Number(amount));
+   if(!Number.isFinite(n)||n<1)return 'أدخل عددًا صحيحًا أكبر من صفر.';
+   if(type==='withdraw'){
+     if(source.army<=0)return 'هذه الدولة لا تملك جيشًا لنقله.';
+     if(n>source.army)return `لا يمكنك نقل أكثر من ${source.army} جيش.`;
+     source.army-=n; dest.army+=n; spendAction(p);
+     log(r,`🔄 ${p.name} نقل ${n} جيش من ${source.name} إلى ${dest.name}.`);
+     return `🔄 تم نقل ${n} جيش من ${source.name} إلى ${dest.name}.`;
+   }
+   if(source.defense<=0)return 'هذه الدولة لا تملك دفاعًا لنقله.';
+   if(n>source.defense)return `لا يمكنك نقل أكثر من ${source.defense} دفاع.`;
+   source.defense-=n; dest.defense+=n; spendAction(p);
+   log(r,`🛡️ ${p.name} نقل ${n} دفاع من ${source.name} إلى ${dest.name}.`);
+   return `🛡️ تم نقل ${n} دفاع من ${source.name} إلى ${dest.name}.`;
  }
- if(type==='attack'){const msg=attack(r,p,targetId);if(msg.startsWith('⚔️ هجومك')||msg.startsWith('🏆 احتللت')||msg.startsWith('🛡️ فشل'))spendAction(p);return msg}
+ if(type==='attack'){const msg=attack(r,p,targetId,sourceId);if(msg.startsWith('⚔️ هجومك')||msg.startsWith('🏆 احتللت')||msg.startsWith('🛡️ فشل'))spendAction(p);return msg}
  if(type==='recruit'){const own=r.regions.find(x=>x.owner===p.id);if(!own)return 'لا تملك دولة';if(p.gold<50)return 'تحتاج 50 ذهب';p.gold-=50;own.army+=50;spendAction(p);return `🪖 +50 جيش في ${own.name}`}
  if(type==='fortify'){const t=r.regions[targetId];if(!t||t.owner!==p.id)return 'اختر دولة تملكها';if(p.gold<50)return 'تحتاج 50 ذهب';p.gold-=50;t.defense+=25;spendAction(p);return `🛡️ +25 دفاع لـ ${t.name}`}
  if(type==='build'){const t=r.regions[targetId];if(!t||t.owner!==p.id)return 'اختر دولة تملكها';if(p.gold<80)return 'تحتاج 80 ذهب';if(t.level>=5)return 'هذه الدولة وصلت للمستوى 5';p.gold-=80;t.level++;t.income+=15;t.defense+=10;spendAction(p);return `🏗️ طورت ${t.name} — الدخل الآن ${t.income}`}
@@ -223,7 +241,7 @@ io.on('connection',socket=>{
  socket.on('joinRoom',({code,name},cb)=>{let r=rooms.get(String(code||'').toUpperCase());if(!r)return cb?.({ok:false,error:'الغرفة غير موجودة'});if(r.started)return cb?.({ok:false,error:'اللعبة بدأت'});if(r.players.length>=TERRITORIES.length)return cb?.({ok:false,error:`الغرفة مكتملة — الحد الأقصى ${TERRITORIES.length} لاعبًا`});r.players.push(player(socket,name));socket.join(r.code);log(r,`👤 انضم ${r.players.at(-1).name}`);cb?.({ok:true,code:r.code});send(r)});
  socket.on('start',({code},cb)=>{let r=rooms.get(code);if(!r||r.host!==socket.id)return cb?.({ok:false,error:'المضيف فقط'});if(r.players.length<2)return cb?.({ok:false,error:'تحتاج لاعبين اثنين على الأقل'});start(r);cb?.({ok:true})});
  socket.on('battleResponse',({code,battleId,choice},cb)=>{let r=rooms.get(code);if(!r||!r.started)return cb?.({ok:false,error:'اللعبة غير متاحة'});let p=r.players.find(x=>x.id===socket.id);let result=battleResponse(r,p,battleId,choice);send(r);cb?.({ok:true,message:result})});
- socket.on('action',({code,type,targetId,destinationId,amount,supportType},cb)=>{let r=rooms.get(code);if(!validTurn(r,socket.id))return cb?.({ok:false,error:'ليس دورك'});let p=current(r);let result=action(r,p,type,targetId,destinationId,amount,supportType);if(result)log(r,`${p.name}: ${result}`);send(r);cb?.({ok:true,message:result})});
+ socket.on('action',({code,type,targetId,destinationId,amount,supportType,sourceId},cb)=>{let r=rooms.get(code);if(!validTurn(r,socket.id))return cb?.({ok:false,error:'ليس دورك'});let p=current(r);let result=action(r,p,type,targetId,destinationId,amount,supportType,sourceId);if(result)log(r,`${p.name}: ${result}`);send(r);cb?.({ok:true,message:result})});
 socket.on('diplomacyRequest',({code,toId,type},cb)=>{let r=rooms.get(code);if(!r||!r.started)return cb?.({ok:false,error:'اللعبة غير متاحة'});let p=r.players.find(x=>x.id===socket.id);let result=diplomacyRequest(r,p,toId,type);send(r);cb?.({ok:true,message:result})});
 socket.on('diplomacyResponse',({code,requestId,choice},cb)=>{let r=rooms.get(code);if(!r||!r.started)return cb?.({ok:false,error:'اللعبة غير متاحة'});let p=r.players.find(x=>x.id===socket.id);let result=diplomacyResponse(r,p,requestId,choice);send(r);cb?.({ok:true,message:result})});
  socket.on('disconnect',()=>{for(const r of rooms.values()){let p=r.players.find(x=>x.id===socket.id);if(!p)continue;if(!r.started){r.players=r.players.filter(x=>x.id!==socket.id);if(r.host===socket.id)r.host=r.players[0]?.id||null;if(!r.players.length)rooms.delete(r.code);else send(r)}else{p.alive=false;log(r,`🚪 غادر ${p.name}`);if(current(r)?.id===p.id)endTurn(r);else send(r)}}});
