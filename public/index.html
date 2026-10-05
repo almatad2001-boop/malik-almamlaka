@@ -148,13 +148,13 @@ function renderPanels(demo){
  $('turnTxt').textContent=state.turnPlayer===(socket?.id||'demo')?`🔥 دورك الآن — بقيت ${state.actionsLeft||0} حركات`:`دور ${ownerName(state.turnPlayer)}`;
  $('myStats').innerHTML=[['💰','ذهب',me?.gold||0],['⚔️','جيش',me?.army||0],['🏰','دول',me?.territories?.length??state.regions.filter(r=>r.owner===mine).length],['🏆','نقاط',Math.round(me?.score||0)],['🎯','حركات',state.actionsLeft||0],['👑','الهدف','أكثر دول']].map(x=>`<div class="stat"><div>${x[0]}</div><b>${x[2]}</b><span>${x[1]}</span></div>`).join('');
  let rr=state.regions[selectedRegion];
- if((selectedRegion===null||selectedRegion===undefined||!rr) && !demo && mine && state.turnPlayer===mine){ const firstOwned=state.regions.findIndex(x=>x.owner===mine); if(firstOwned>=0){ selectedRegion=firstOwned; rr=state.regions[firstOwned]; renderMap(); } }
- if(!rr){$('selectedInfo').innerHTML='<b>ابدأ من هنا 👇</b><br>اضغط على دولة تملكها. بعدها اضغط على دولة مجاورة إذا أردت احتلالها.'}
+ if((selectedRegion===null||selectedRegion===undefined||!rr) && !demo && mine){ const firstOwned=state.regions.findIndex(x=>x.owner===mine); if(firstOwned>=0){ selectedRegion=firstOwned; rr=state.regions[firstOwned]; renderMap(); } }
+ if(!rr){$('selectedInfo').innerHTML='<b>ابدأ من هنا 👇</b><br>اضغط على دولة تملكها. بعدها اضغط على دولة مجاورة إذا أردت احتلالها.'; $('actions').innerHTML='<button disabled>⏳ اختر دولة من الخريطة أولًا</button>'; return }
  else {
    const owned=rr.owner===mine; const mm=rr.militia; const mineMilitia=mm&&mm.owner===mine; const enemyMilitia=mm&&mm.owner!==mine;
    $('selectedInfo').innerHTML=`<b style="font-size:20px;color:var(--gold2)">${esc(rr.name)}</b><br>👑 المالك: <strong>${rr.owner?esc(ownerName(rr.owner)):'محايدة'}</strong><br>🏛️ العاصمة: ${esc(rr.capital||'—')}<br>⚔️ الجيش: ${rr.army}<br>🛡️ الدفاع: ${rr.defense}<br>💰 الدخل: ${rr.income}${mineMilitia?`<br>🕵️ ${mm.active?'🔥 تمرد نشط':'خلية نائمة'}: <strong>${mm.count} ميليشيا</strong>`:''}${enemyMilitia&&mm.active?'<br>⚠️ توجد اضطرابات أمنية في هذه الدولة.':''}<br><span class="hint">${owned?(withdrawSource===rr.id?'🔄 اختر الآن دولة أخرى تملكها لنقل كل الجيش إليها.':'هذه دولتك. يمكنك تجنيد أو تحصين أو تطوير أو نقل جزء من جيشها أو دفاعها لدولة أخرى لك.'):'إذا كانت مجاورة لك، يمكنك احتلالها أو استخدام الاستخبارات.'}</span>`;
  }
- const myTurn=demo||state.turnPlayer===socket?.id;
+ const myTurn=demo||state.turnPlayer===mine;
  const canOwn=rr?.owner===mine;
  const acts=[];
  if(canOwn){acts.push(['recruit','🪖 تجنيد +50']);acts.push(['fortify','🛡️ تحصين +25']);acts.push(['build','🏗️ تطوير +15 دخل']); acts.push(['intelligence','🔍 استخبارات وفحص الميليشيات']); const ownCount=state.regions.filter(x=>x.owner===mine).length; if(ownCount>1 && rr.army>0) acts.push(['withdraw','🔄 نقل الجيش']); if(ownCount>1 && rr.defense>0) acts.push(['withdrawDefense','🛡️ نقل الدفاع']); if(rr.securityReady) acts.push(['securityIntervention','🚨 تدخل أمن الدولة (100💰)']); if(state.players.some(x=>x.id!==mine&&x.alive&&(state.myDiplomacy?.find(d=>d.id===mine)?.relations?.[x.id]==='alliance'))) acts.push(['support','🤝 إسناد حليف'])}
