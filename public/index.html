@@ -142,13 +142,14 @@ function ownerName(id){return state.players?.find(p=>p.id===id)?.name||'مملك
 function isAdjacentOwned(id,ownerId){if(!state?.regions||!ownerId)return false;return state.regions.some(x=>x.owner===ownerId&&window.ADJ_CLIENT?.[x.id]?.includes(id))||false}
 window.ADJ_CLIENT={0:[1,5,6],1:[0,2,3,4,5,15],2:[1,3,15],3:[1,2,4,14,15],4:[1,3,5,8,15],5:[0,1,4,6,7,8],6:[0,5,7,11,16,17],7:[5,8,9],8:[4,5,7,9,10,11,12,13],9:[7,10,8],10:[9,8,11],11:[6,8,10,12],12:[8,11,13],13:[8,12,14],14:[3,13,15,18],15:[1,2,3,4,14],16:[6,17],17:[6,16],18:[14]};
 function renderPanels(demo){
- let me=state.players?.find(p=>p.id===(socket?.id||'demo'))||state.players?.[0];
- const mine=me?.id;
+ const viewerId=state.viewerId||socket?.id||(demo?'demo':null);
+ let me=state.players?.find(p=>p.id===viewerId)||state.players?.[0];
+ const mine=viewerId||me?.id;
  $('roundTxt').textContent=`الجولة ${state.round||1} / ${state.maxRounds||20}`;
  $('turnTxt').textContent=state.turnPlayer===(socket?.id||'demo')?`🔥 دورك الآن — بقيت ${state.actionsLeft||0} حركات`:`دور ${ownerName(state.turnPlayer)}`;
  $('myStats').innerHTML=[['💰','ذهب',me?.gold||0],['⚔️','جيش',me?.army||0],['🏰','دول',me?.territories?.length??state.regions.filter(r=>r.owner===mine).length],['🏆','نقاط',Math.round(me?.score||0)],['🎯','حركات',state.actionsLeft||0],['👑','الهدف','أكثر دول']].map(x=>`<div class="stat"><div>${x[0]}</div><b>${x[2]}</b><span>${x[1]}</span></div>`).join('');
  let rr=state.regions[selectedRegion];
- if((selectedRegion===null||selectedRegion===undefined||!rr) && !demo && mine){ const firstOwned=state.regions.findIndex(x=>x.owner===mine); if(firstOwned>=0){ selectedRegion=firstOwned; rr=state.regions[firstOwned]; renderMap(); } }
+ if((selectedRegion===null||selectedRegion===undefined||!rr||rr.owner!==mine) && mine){ const firstOwned=state.regions.findIndex(x=>x.owner===mine); if(firstOwned>=0){ selectedRegion=firstOwned; rr=state.regions[firstOwned]; renderMap(); } }
  if(!rr){$('selectedInfo').innerHTML='<b>ابدأ من هنا 👇</b><br>اضغط على دولة تملكها. بعدها اضغط على دولة مجاورة إذا أردت احتلالها.'; $('actions').innerHTML='<button disabled>⏳ اختر دولة من الخريطة أولًا</button>'; return }
  else {
    const owned=rr.owner===mine; const mm=rr.militia; const mineMilitia=mm&&mm.owner===mine; const enemyMilitia=mm&&mm.owner!==mine;
