@@ -148,6 +148,7 @@ function renderPanels(demo){
  $('turnTxt').textContent=state.turnPlayer===(socket?.id||'demo')?`🔥 دورك الآن — بقيت ${state.actionsLeft||0} حركات`:`دور ${ownerName(state.turnPlayer)}`;
  $('myStats').innerHTML=[['💰','ذهب',me?.gold||0],['⚔️','جيش',me?.army||0],['🏰','دول',me?.territories?.length??state.regions.filter(r=>r.owner===mine).length],['🏆','نقاط',Math.round(me?.score||0)],['🎯','حركات',state.actionsLeft||0],['👑','الهدف','أكثر دول']].map(x=>`<div class="stat"><div>${x[0]}</div><b>${x[2]}</b><span>${x[1]}</span></div>`).join('');
  let rr=state.regions[selectedRegion];
+ if((selectedRegion===null||selectedRegion===undefined||!rr) && !demo && mine && state.turnPlayer===mine){ const firstOwned=state.regions.findIndex(x=>x.owner===mine); if(firstOwned>=0){ selectedRegion=firstOwned; rr=state.regions[firstOwned]; renderMap(); } }
  if(!rr){$('selectedInfo').innerHTML='<b>ابدأ من هنا 👇</b><br>اضغط على دولة تملكها. بعدها اضغط على دولة مجاورة إذا أردت احتلالها.'}
  else {
    const owned=rr.owner===mine; const mm=rr.militia; const mineMilitia=mm&&mm.owner===mine; const enemyMilitia=mm&&mm.owner!==mine;
