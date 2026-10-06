@@ -209,11 +209,13 @@ function battleResponse(r,p,battleId,choice){
   r.pendingBattles=r.pendingBattles.filter(x=>x.id!==b.id);
   if(choice==='withdraw'){
     const source=r.regions[b.sourceId];
-    const moved=b.fromOccupation ? Math.max(0,t.occupation?.army||0) : Math.max(0,source?.army||0);
-    if(b.fromOccupation){ t.occupation={attackerId:attacker.id,army:moved,sourceId:b.sourceId}; }
-    else { if(source)source.army=Math.max(0,source.army-moved); t.occupation={attackerId:attacker.id,army:moved,sourceId:b.sourceId}; }
+    const available=b.fromOccupation ? Math.max(0,source?.occupation?.army||0) : Math.max(0,source?.army||0);
+    const moved=Math.ceil(available/2);
+    if(b.fromOccupation){ if(source?.occupation)source.occupation.army=Math.max(0,available-moved); }
+    else if(source)source.army=Math.max(0,available-moved);
+    t.occupation={attackerId:attacker.id,army:moved,sourceId:b.sourceId};
     log(r,`↩️ ${p.name} اختار الانسحاب من ${t.name}. ${attacker.name} احتل نصف الدولة.`);
-    return `↩️ انسحبت من ${t.name}. أصبح نصف الدولة تحت سيطرة ${attacker.name}.`;
+    return `↩️ انسحبت من ${t.name}. أصبح نصف الدولة تحت سيطرة ${attacker.name}، وبقي ${available-moved} جيش في مصدر الهجوم.`;
   }
   if(choice!=='resist')return 'اختر الانسحاب أو المقاومة.';
   const source=r.regions[b.sourceId];
@@ -241,13 +243,13 @@ function battleResponse(r,p,battleId,choice){
 function aiOwned(r,ai){return r.regions.filter(x=>x.owner===ai.id)}
 function aiAdjacentTargets(r,ai){
   const mine=ai.id;
-  return r.regions.filter(t=>t.owner!==mine && r.regions.some(s=>s.owner===mine&&ADJ[s.id]?.includes(t.id)&&s.army>=50))
+  return r.regions.filter(t=>t.owner!==mine && r.regions.some(s=>s.owner===mine&&ADJ[s.id]?.includes(t.id)&&s.army>=1))
 }
 function aiBestAttack(r,ai){
   const targets=aiAdjacentTargets(r,ai);
   if(!targets.length)return null;
   const ranked=targets.map(t=>{
-    const sources=r.regions.filter(s=>s.owner===ai.id&&ADJ[s.id]?.includes(t.id)&&s.army>=50);
+    const sources=r.regions.filter(s=>s.owner===ai.id&&ADJ[s.id]?.includes(t.id)&&s.army>=1);
     const source=sources.sort((a,b)=>b.army-a.army)[0];
     const enemy=t.owner? t.army+t.defense*0.8 : t.army*0.65+t.defense;
     const power=source?source.army*0.72+source.level*20:0;
