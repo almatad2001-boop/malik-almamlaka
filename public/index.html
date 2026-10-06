@@ -159,7 +159,7 @@ function renderPanels(demo){
  $('roundTxt').textContent=`الجولة ${state.round||1} — لا نهائية`;
  const secs=state.turnDeadline?Math.max(0,Math.ceil((state.turnDeadline-Date.now())/1000)):0; $('turnTxt').textContent=state.turnPlayer===mine?`🔥 دورك الآن — ⏱️ ${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')}`:`دور ${ownerName(state.turnPlayer)} — ⏱️ ${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')}`;
  $('myStats').innerHTML=[['💰','ذهب',me?.gold||0],['⚔️','جيش',me?.army||0],['🏰','دول',me?.territories?.length??state.regions.filter(r=>r.owner===mine).length],['🏆','نقاط',Math.round(me?.score||0)],['⏱️','وقت الدور', state.turnPlayer===mine ? `${Math.max(0,Math.ceil((state.turnDeadline-Date.now())/1000))}ث` : 'انتظار'],['👑','الهدف','أكثر دول']].map(x=>`<div class="stat"><div>${x[0]}</div><b>${x[2]}</b><span>${x[1]}</span></div>`).join('');
- if(!demo && mine && (selectedRegion===null || selectedRegion===undefined || !state.regions[selectedRegion] || state.regions[selectedRegion].owner!==mine)){ const firstOwned=state.regions.findIndex(x=>x.owner===mine); if(firstOwned>=0) selectedRegion=firstOwned; }
+ if(!demo && mine && (selectedRegion===null || selectedRegion===undefined || !state.regions[selectedRegion])){ const firstOwned=state.regions.findIndex(x=>x.owner===mine); if(firstOwned>=0) selectedRegion=firstOwned; }
  let rr=state.regions[selectedRegion];
  if(!rr){$('selectedInfo').innerHTML='<b>ابدأ من هنا 👇</b><br>اضغط على دولة تملكها. بعدها اضغط على دولة مجاورة إذا أردت احتلالها.'; $('actions').innerHTML='<button disabled>⏳ اختر دولة من الخريطة أولًا</button>'; return }
  else {
