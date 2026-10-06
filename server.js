@@ -94,66 +94,118 @@ function battleLosses(attackerArmy,defenderArmy,attackerWins){
   return {aLoss,dLoss};
 }
 function attack(r,p,targetId,sourceId=null){
-  const t=r.regions[targetId]; if(!t)return 'الدولة غير موجودة'; if(t.owner===p.id)return 'هذه دولتك بالفعل';
+  const t=r.regions[targetId];
+  if(!t)return 'الدولة غير موجودة';
+  if(t.owner===p.id && !t.occupation?.attackerId)return 'هذه دولتك بالفعل';
   if(r.pendingBattles.some(b=>b.targetId===t.id))return 'هناك معركة معلقة في هذه الدولة بانتظار قرار المدافع.';
-  let source=null;
+
+  // استعادة نصف الدولة المحتل: المالك الأصلي يهاجم القوة الموجودة في نصفه المحتل.
+  const reclaim = t.owner===p.id && !!t.occupation?.attackerId && t.occupation.attackerId!==p.id;
+  let source=null, fromOccupation=false;
   if(sourceId!==null&&sourceId!==undefined){
     const chosen=r.regions[Number(sourceId)];
-    if(!chosen||chosen.owner!==p.id||!ADJ[chosen.id]?.includes(t.id)||chosen.army<50)return 'اختر دولة تملكها ومجاورة للهدف وبها 50 جيشًا على الأقل.';
-    source=chosen;
-  } else {
-    source=r.regions.find(x=>x.owner===p.id&&ADJ[x.id]?.includes(t.id)&&x.army>=50);
+    if(!chosen || !ADJ[chosen.id]?.includes(t.id))return 'اختر دولة تملكها ومجاورة للهدف.';
+    if(chosen.owner===p.id){
+      if(chosen.army<1)return 'يجب أن يكون لدى الدولة المهاجمة جيش واحد على الأقل.';
+      source=chosen;
+    }else if(chosen.occupation?.attackerId===p.id){
+      if((chosen.occupation.army||0)<1)return 'لا يوجد جيش كافٍ في نصف الدولة المحتل.';
+      source=chosen; fromOccupation=true;
+    }else return 'اختر دولة تملكها أو نصف دولة تسيطر عليه.';
+  }else{
+    source=r.regions.find(x=>(x.owner===p.id&&x.army>=1&&ADJ[x.id]?.includes(t.id)) || (x.occupation?.attackerId===p.id&&(x.occupation.army||0)>=1&&ADJ[x.id]?.includes(t.id)));
+    fromOccupation=!!(source?.occupation?.attackerId===p.id && source.owner!==p.id);
   }
-  let occupiedSource=null;
-  if(t.occupation?.attackerId===p.id && (t.occupation.army||0)>=50) occupiedSource={region:t,army:t.occupation.army,sourceId:t.occupation.sourceId,fromOccupation:true};
-  if(occupiedSource) source=t;
   if(!source)return 'هذه الدولة ليست مجاورة لك أو لا يوجد جيش كافٍ للهجوم.';
+
+  const sourceArmy=fromOccupation?(source.occupation?.army||0):source.army;
+  if(sourceArmy<1)return 'لا يوجد جيش كافٍ للهجوم.';
   const cost=100;if(p.gold<cost)return 'تحتاج 100 ذهب للهجوم';
   p.gold-=cost;p.stats=p.stats||{attacks:0};p.stats.attacks++;
 
-  // Neutral countries can be attacked directly; there is no defender player to choose withdraw/resist.
+  // معركة استعادة النصف: لا نرسل اللاعب لمواجهة نفسه؛ المدافع هنا هو صاحب الاحتلال.
+  if(reclaim){
+    const occupiedArmy=Math.max(0,t.occupation?.army||0);
+    if(occupiedArmy<=0){t.occupation=null;return `تمت استعادة ${t.name}.`;}
+    const id=++r.battleSeq;
+    r.pendingBattles.push({id,attackerId:p.id,defenderId:t.occupation.attackerId,targetId:t.id,sourceId:source.id,createdRound:r.round,fromOccupation:false,reclaim:true});
+    log(r,`⚔️ ${p.name} يحاول استعادة نصف ${t.name} من ${r.players.find(x=>x.id===t.occupation.attackerId)?.name||'المحتل'}.`);
+    return `⚔️ هجوم استعادة ${t.name} — بانتظار قرار المحتل.`;
+  }
+
   if(!t.owner){
-    const power=source.army*.72+source.level*20+Math.random()*30;
+    const power=sourceArmy*.72+source.level*20+Math.random()*30;
     const enemy=t.army*.62+t.defense+t.level*15+Math.random()*25;
     if(power>enemy){
-      const loss=Math.max(15,Math.floor(source.army*.18));
-      source.army=Math.max(0,source.army-loss);
-      t.owner=p.id;t.army=Math.max(20,Math.floor(source.army*.5));t.level=1;t.defense=30;t.occupation=null;
-      log(r,`🏆 ${p.name} احتل الدولة المحايدة ${t.name}.`);
-      return `🏆 احتللت ${t.name} المحايدة.`;
+      const loss=Math.max(1,Math.floor(sourceArmy*.18));
+      if(fromOccupation)source.occupation.army=Math.max(0,sourceArmy-loss); else source.army=Math.max(0,sourceArmy-loss);
+      const remaining=fromOccupation?(source.occupation.army||0):source.army;
+      t.owner=p.id;t.army=Math.max(1,Math.floor(remaining*.5));t.level=1;t.defense=30;t.occupation=null;
+      log(r,`🏆 ${p.name} احتل الدولة المحايدة ${t.name}.`);return `🏆 احتللت ${t.name} المحايدة.`;
     }
-    const aLoss=Math.max(10,Math.floor(source.army*.15));
-    source.army=Math.max(0,source.army-aLoss);
-    t.army=Math.max(0,t.army-Math.max(10,Math.floor(t.army*.12)));
+    const aLoss=Math.max(1,Math.floor(sourceArmy*.15));
+    if(fromOccupation)source.occupation.army=Math.max(0,sourceArmy-aLoss); else source.army=Math.max(0,sourceArmy-aLoss);
+    t.army=Math.max(0,t.army-Math.max(1,Math.floor(t.army*.12)));
     return `🛡️ فشل هجومك على ${t.name} المحايدة وتراجعت قواتك.`;
   }
 
-  // A zero-defense country with an army gives its owner a strategic choice:
-  // withdraw and surrender half the land, or resist in a pure army-vs-army battle.
   if(t.defense<50 && t.army>0){
     const id=++r.battleSeq;
-    r.pendingBattles.push({id,attackerId:p.id,defenderId:t.owner,targetId:t.id,sourceId:source.id,createdRound:r.round,fromOccupation:!!occupiedSource});
+    r.pendingBattles.push({id,attackerId:p.id,defenderId:t.owner,targetId:t.id,sourceId:source.id,createdRound:r.round,fromOccupation});
     log(r,`⚔️ ${p.name} هاجم ${t.name} ودفاعها ${t.defense}. ينتظر قرار ${r.players.find(x=>x.id===t.owner)?.name||'المدافع'}: انسحاب أو مقاومة.`);
     return `⚔️ هجومك على ${t.name} — بانتظار قرار المدافع.`;
   }
 
-  // Empty army and zero defense: immediate occupation.
   if(t.defense<=0 && t.army<=0){
-    const moved=source.army; source.army=0; t.owner=p.id; t.army=moved; t.defense=0; t.occupation=null;
-    log(r,`🏆 ${p.name} احتل ${t.name} بالكامل.`);return `🏆 احتللت ${t.name} بالكامل.`;
+    if(fromOccupation){const moved=source.occupation.army;source.occupation=null;t.owner=p.id;t.army=moved;}else{const moved=source.army;source.army=0;t.owner=p.id;t.army=moved;}
+    t.defense=0;t.occupation=null;log(r,`🏆 ${p.name} احتل ${t.name} بالكامل.`);return `🏆 احتللت ${t.name} بالكامل.`;
   }
 
-  const power=source.army*.72+source.level*20+Math.random()*30;
+  const power=sourceArmy*.72+source.level*20+Math.random()*30;
   const enemy=t.army*.62+t.defense+t.level*15+Math.random()*25;
-  if(power>enemy){const loss=Math.max(20,Math.floor(source.army*.25));source.army=Math.max(0,source.army-loss);t.owner=p.id;t.army=Math.max(25,Math.floor(source.army*.55));t.level=1;t.defense=30;t.occupation=null;log(r,`⚔️ ${p.name} احتل ${t.name} بنجاح!`);return `🏆 احتللت ${t.name}`}
-  source.army=Math.max(0,source.army-Math.floor(source.army*.2));t.army=Math.max(15,t.army-Math.floor(t.army*.1));return `🛡️ فشل الهجوم على ${t.name}`
+  if(power>enemy){
+    const loss=Math.max(1,Math.floor(sourceArmy*.25));
+    const remaining=Math.max(0,sourceArmy-loss);
+    if(fromOccupation){source.occupation.army=remaining;}else source.army=remaining;
+    t.owner=p.id;t.army=Math.max(1,Math.floor(remaining*.55));t.level=1;t.defense=30;t.occupation=null;log(r,`⚔️ ${p.name} احتل ${t.name} بنجاح!`);return `🏆 احتللت ${t.name}`;
+  }
+  const loss=Math.max(1,Math.floor(sourceArmy*.2));
+  if(fromOccupation)source.occupation.army=Math.max(0,sourceArmy-loss);else source.army=Math.max(0,sourceArmy-loss);
+  t.army=Math.max(0,t.army-Math.max(1,Math.floor(t.army*.1)));return `🛡️ فشل الهجوم على ${t.name}`;
 }
+
 function battleResponse(r,p,battleId,choice){
   const b=r.pendingBattles.find(x=>x.id===Number(battleId));
   if(!b)return 'المعركة غير موجودة أو انتهت.';
   if(b.defenderId!==p.id)return 'هذا القرار متاح للمدافع فقط.';
   const t=r.regions[b.targetId], attacker=r.players.find(x=>x.id===b.attackerId);
   if(!t||!attacker)return 'بيانات المعركة غير صالحة.';
+
+  // معركة استعادة نصف الدولة: القرار يكون للمحتل، والفائز في المعركة يحدد بقاء الاحتلال.
+  if(b.reclaim){
+    const source=r.regions[b.sourceId];
+    const attackerArmy=Math.max(0,source?.army||0);
+    const occupiedArmy=Math.max(0,t.occupation?.army||0);
+    if(attackerArmy<=0||occupiedArmy<=0){t.occupation=null;r.pendingBattles=r.pendingBattles.filter(x=>x.id!==b.id);return 'انتهت السيطرة الجزئية لعدم وجود قوات كافية.';}
+    const ap=attackerArmy*(0.90+Math.random()*0.20);
+    const dp=occupiedArmy*(0.96+Math.random()*0.16);
+    const ownerWins=ap>dp;
+    const aLoss=Math.max(1,Math.floor(attackerArmy*(ownerWins?0.18:0.35)));
+    const oLoss=Math.max(1,Math.floor(occupiedArmy*(ownerWins?0.35:0.18)));
+    source.army=Math.max(0,attackerArmy-aLoss);
+    if(ownerWins){
+      t.occupation=null;
+      log(r,`🏆 ${r.players.find(x=>x.id===b.attackerId)?.name||'المالك'} استعاد نصف ${t.name} من ${p.name}.`);
+      r.pendingBattles=r.pendingBattles.filter(x=>x.id!==b.id);
+      return `🏆 فشل الاحتلال الجزئي. استعاد المالك ${t.name} وخسرت ${oLoss} جيش.`;
+    }
+    t.occupation.army=Math.max(0,occupiedArmy-oLoss);
+    r.pendingBattles=r.pendingBattles.filter(x=>x.id!==b.id);
+    if(t.occupation.army<=0)t.occupation=null;
+    log(r,`🛡️ ${p.name} صد محاولة استعادة ${t.name}.`);
+    return `🛡️ صدَدت محاولة استعادة ${t.name}. خسرت ${oLoss} جيش.`;
+  }
+
   r.pendingBattles=r.pendingBattles.filter(x=>x.id!==b.id);
   if(choice==='withdraw'){
     const source=r.regions[b.sourceId];
@@ -179,7 +231,7 @@ function battleResponse(r,p,battleId,choice){
     log(r,`🏆 ${attacker.name} انتصر في مقاومة ${t.name} واحتلها بالكامل. خسائر المهاجم ${aLoss} والمدافع ${dLoss}.`);
     return `🏆 انتصرت المقاومة؟ لا — ${attacker.name} انتصر واحتل ${t.name} بالكامل. خسائرك ${dLoss} جيش.`;
   }
-  if(b.fromOccupation){const retreat=r.regions[b.sourceId];if(retreat&&retreat.owner===attacker.id)retreat.army+=newA;t.occupation=null;} else if(source)source.army=newA;
+  if(b.fromOccupation){const retreatId=t.occupation?.sourceId;const retreat=r.regions[retreatId];if(retreat&&retreat.owner===attacker.id)retreat.army+=newA;t.occupation=null;} else if(source)source.army=newA;
   t.army=newD;
   if(t.occupation?.attackerId===attacker.id)t.occupation=null;
   log(r,`🛡️ ${p.name} صد هجوم ${attacker.name} في ${t.name}. خسر المهاجم ${aLoss} والمدافع ${dLoss}. عاد جيش المهاجم إلى دولته.`);
@@ -300,7 +352,7 @@ function action(r,p,type,targetId,destinationId,amount,supportType,sourceId){
    return `🛡️ تم نقل ${n} دفاع من ${source.name} إلى ${dest.name}.`;
  }
  if(type==='attack'){const msg=attack(r,p,targetId,sourceId);if(msg.startsWith('⚔️ هجومك')||msg.startsWith('🏆 احتللت')||msg.startsWith('🛡️ فشل'))spendAction(p);return msg}
- if(type==='recruit'){const own=r.regions.find(x=>x.owner===p.id);if(!own)return 'لا تملك دولة';if(p.gold<50)return 'تحتاج 50 ذهب';p.gold-=50;own.army+=50;spendAction(p);return `🪖 +50 جيش في ${own.name}`}
+ if(type==='recruit'){const t=r.regions[targetId];const partial=t?.occupation?.attackerId===p.id;if(!t||(!partial&&t.owner!==p.id))return 'اختر دولة تملكها أو نصف دولة تحت احتلالك.';if(p.gold<50)return 'تحتاج 50 ذهب';p.gold-=50;if(partial)t.occupation.army=(t.occupation.army||0)+50;else t.army+=50;spendAction(p);return `🪖 +50 جيش في ${t.name}`}
  if(type==='fortify'){const t=r.regions[targetId];if(!t||t.owner!==p.id)return 'اختر دولة تملكها';if(p.gold<50)return 'تحتاج 50 ذهب';p.gold-=50;t.defense+=25;spendAction(p);return `🛡️ +25 دفاع لـ ${t.name}`}
  if(type==='build'){const t=r.regions[targetId];if(!t||t.owner!==p.id)return 'اختر دولة تملكها';if(p.gold<80)return 'تحتاج 80 ذهب';if(t.level>=5)return 'هذه الدولة وصلت للمستوى 5';p.gold-=80;t.level++;t.income+=15;t.defense+=10;spendAction(p);return `🏗️ طورت ${t.name} — الدخل الآن ${t.income}`}
  return 'اختر احتلال أو تجنيد أو تحصين أو تطوير أو نقل الجيش أو الميليشيات.'
