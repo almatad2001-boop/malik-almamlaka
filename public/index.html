@@ -163,18 +163,20 @@ function renderPanels(demo){
  let rr=state.regions[selectedRegion];
  if(!rr){$('selectedInfo').innerHTML='<b>ابدأ من هنا 👇</b><br>اضغط على دولة تملكها. بعدها اضغط على دولة مجاورة إذا أردت احتلالها.'; $('actions').innerHTML='<button disabled>⏳ اختر دولة من الخريطة أولًا</button>'; return }
  else {
-   const owned=rr.owner===mine; const mm=rr.militia; const mineMilitia=mm&&mm.owner===mine; const enemyMilitia=mm&&mm.owner!==mine;
-   $('selectedInfo').innerHTML=`<b style="font-size:20px;color:var(--gold2)">${esc(rr.name)}</b><br>👑 المالك: <strong>${rr.owner?esc(ownerName(rr.owner)):'محايدة'}</strong><br>🏛️ العاصمة: ${esc(rr.capital||'—')}<br>⚔️ الجيش: ${rr.army}<br>🛡️ الدفاع: ${rr.defense}<br>💰 الدخل: ${rr.income}${mineMilitia?`<br>🕵️ ${mm.active?'🔥 تمرد نشط':'خلية نائمة'}: <strong>${mm.count} ميليشيا</strong>`:''}${enemyMilitia&&mm.active?'<br>⚠️ توجد اضطرابات أمنية في هذه الدولة.':''}<br><span class="hint">${owned?(transferSource===rr.id?'🔄 اختر الآن دولة أخرى تملكها لنقل كل الجيش إليها.':'هذه دولتك. يمكنك تجنيد أو تحصين أو تطوير أو نقل جزء من جيشها أو دفاعها لدولة أخرى لك.'):'إذا كانت مجاورة لك، يمكنك احتلالها أو استخدام الاستخبارات.'}</span>`;
+   const owned=rr.owner===mine; const partialMine=!!(rr.occupation?.attackerId===mine); const controlledHere=owned||partialMine; const mm=rr.militia; const mineMilitia=mm&&mm.owner===mine; const enemyMilitia=mm&&mm.owner!==mine;
+   $('selectedInfo').innerHTML=`<b style="font-size:20px;color:var(--gold2)">${esc(rr.name)}</b><br>👑 المالك: <strong>${rr.owner?esc(ownerName(rr.owner)):'محايدة'}</strong><br>🏛️ العاصمة: ${esc(rr.capital||'—')}<br>⚔️ الجيش: ${rr.army}<br>🛡️ الدفاع: ${rr.defense}<br>💰 الدخل: ${rr.income}${mineMilitia?`<br>🕵️ ${mm.active?'🔥 تمرد نشط':'خلية نائمة'}: <strong>${mm.count} ميليشيا</strong>`:''}${enemyMilitia&&mm.active?'<br>⚠️ توجد اضطرابات أمنية في هذه الدولة.':''}<br><span class="hint">${owned?(transferSource===rr.id?'🔄 اختر الآن دولة أخرى تملكها لنقل كل الجيش إليها.':'هذه دولتك. يمكنك تجنيد أو تحصين أو تطوير أو نقل جزء من جيشها أو دفاعها لدولة أخرى لك.'):partialMine?'🟢 هذا نصف محتل تحت سيطرتك. يمكنك استخدام جيشه للهجوم من هذه الجبهة.':'إذا كانت مجاورة لك، يمكنك احتلالها أو استخدام الاستخبارات.'}</span>`;
  }
  const myTurn=demo||state.turnPlayer===mine;
  const canOwn=rr?.owner===mine;
+ const partialMine=!!(rr?.occupation?.attackerId===mine);
  const acts=[];
  if(canOwn){acts.push(['recruit','🪖 تجنيد +50']);acts.push(['fortify','🛡️ تحصين +25']);acts.push(['build','🏗️ تطوير +15 دخل']); acts.push(['intelligence','🔍 استخبارات وفحص الميليشيات']); const ownCount=state.regions.filter(x=>x.owner===mine).length; if(ownCount>1 && rr.army>0) acts.push(['withdraw','🔄 نقل الجيش']); if(ownCount>1 && rr.defense>0) acts.push(['withdrawDefense','🛡️ نقل الدفاع']); if(rr.securityReady) acts.push(['securityIntervention','🚨 تدخل أمن الدولة (100💰)']); if(state.players.some(x=>x.id!==mine&&x.alive&&(state.myDiplomacy?.find(d=>d.id===mine)?.relations?.[x.id]==='alliance'))) acts.push(['support','🤝 إسناد حليف'])}
- if(rr && rr.owner===mine){
-   const attackTargets=state.regions.filter(x=>x.owner!==mine && isAdjacentOwned(x.id,mine));
-   attackTargets.forEach(x=>acts.push([`attackTarget_${x.id}`,`⚔️ احتلال ${x.name}${!x.owner?' (محايدة)':''}`]));
+ if(partialMine){
+   // A partially occupied country is itself a controllable front.
+   if(myTurn && (window.ADJ_CLIENT?.[rr.id]||[]).some(id=>state.regions[id]?.owner!==mine)) acts.push(['attack','⚔️ اختيار احتلال']);
  } else if(rr && rr.owner!==mine){
-   if(isAdjacentOwned(rr.id,mine)) acts.push(['attack','⚔️ احتلال الدولة']);
+   // Old/simple occupation flow: select a country on the map, then press one occupation button.
+   if(isAdjacentOwned(rr.id,mine)) acts.push(['attack','⚔️ اختيار احتلال']);
    if(rr.owner&&isAdjacentOwned(rr.id,mine)) acts.push(['plantMilitia','🕵️ زرع 10 ميليشيات']);
    if(rr.owner&&isAdjacentOwned(rr.id,mine)) acts.push(['intelligence','🔍 الاستخبارات']);
    if(rr.militia?.owner===mine&&!rr.militia.active) acts.push(['revolt','🔥 تمرد']);
@@ -197,7 +199,7 @@ function openAttackTargetModal(targets){
 function selectAttackTarget(id){closeModal();selectedRegion=id;renderPanels(false);startAttack();}
 function openAttackSourceModal(target,sources){
  $('modalTitle').textContent=`🎯 من أي دولة تريد الهجوم على ${target.name}؟`;
- $('modalChoices').innerHTML=sources.map(x=>`<button class="choiceBtn" onclick="selectAttackSource(${x.id})"><strong>🏰 ${esc(x.name)}</strong><br><span class="mini">🪖 ${x.army} جيش · 🛡️ ${x.defense} دفاع</span></button>`).join('');
+ $('modalChoices').innerHTML=sources.map(x=>`<button class="choiceBtn" onclick="selectAttackSource(${x.id})"><strong>🏰 ${esc(x.name)}</strong><br><span class="mini">🪖 ${x.occupation?.attackerId===myId()?(x.occupation.army||0):x.army} جيش · 🛡️ ${x.defense} دفاع${x.occupation?.attackerId===myId()?' · 🟢 نصف محتل':''}</span></button>`).join('');
  $('actionModal').classList.remove('hidden');
 }
 function selectAttackSource(id){closeModal();sendAction('attack',selectedRegion,undefined,undefined,undefined,id)}
@@ -207,8 +209,8 @@ function startAttack(){
  if(selectedRegion===null||selectedRegion===undefined)return toast('اضغط على الدولة التي تريد مهاجمتها أولًا');
  const target=state.regions[selectedRegion], mine=myId();
  if(!target||target.owner===mine)return toast('اختر دولة عدو أو دولة محايدة.');
- const sources=state.regions.filter(x=>x.owner===mine && (window.ADJ_CLIENT?.[x.id]||[]).includes(target.id) && x.army>=50);
- if(!sources.length)return toast('لا توجد دولة مجاورة لك فيها 50 جيشًا على الأقل للهجوم.');
+ const sources=state.regions.filter(x=>(x.owner===mine && (window.ADJ_CLIENT?.[x.id]||[]).includes(target.id) && x.army>=50) || (x.occupation?.attackerId===mine && (window.ADJ_CLIENT?.[x.id]||[]).includes(target.id) && (x.occupation.army||0)>=50));
+ if(!sources.length)return toast('لا توجد جبهة مجاورة لك فيها 50 جيشًا على الأقل للهجوم.');
  if(sources.length===1){sendAction('attack',target.id,undefined,undefined,undefined,sources[0].id);return;}
  openAttackSourceModal(target,sources);
 }
